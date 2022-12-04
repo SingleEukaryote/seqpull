@@ -45,3 +45,4 @@ conda activate seqpull
 
 ## Pipeline overview
 
+![[seqpull_pipeline.png]]
