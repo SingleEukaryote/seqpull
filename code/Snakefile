@@ -1,0 +1,302 @@
+import os
+'''
+Use a file of gene queries to pull similar sequences from nucleotide datasets (transcriptomes, genomes, etc)
+
+Functions:
+- Pull gene sequences from datasets using a high throughput snakemake pipeline.
+- CAP3 assembly of pulled sequences (useful for short-read sequences, not long-read).
+- Autoreverse complements sequences based on blast results against the top gene queries.
+- Trims sequence ends based on blast results against the top gene queries.
+- Sequence size filter (default: <500bp sequences are removed).
+- Sequences and output files are automatically named based on input file names and gene file names.
+- Easy-to-parse directories and file names.
+
+conda install -n base -c conda-forge mamba
+mamba create -n seqpull -c conda-forge -c bioconda snakemake biopython cap3 blast
+(if no mamba use the following:)
+conda create -n seqpull -c conda-forge -c bioconda snakemake biopython cap3 blast
+conda activate seqpull
+'''
+
+# Config
+
+evalue = 1e-30
+## default 1e-30
+
+## Minimum sequence size returned (anything below this number will be removed).
+min_seq_size = 500
+### Default: 500
+
+## Data files directories
+DNAin = "../data/DNAinputs/"
+gene_queries = "../data/gene_queries/active/"
+### this script always copies original datafiles. It will not alter them.
+## Default: DNAin = "../data/DNAinputs/"
+## Default: gene_queries = "../data/gene_queries/active"
+
+
+##################################### Gets filenames #######################################
+print('=========================== filenames ==============================')
+def get_filenames():
+    # Converts file names into a searchable, parsible list
+    datafiles = [file for file in os.listdir(DNAin) if file.endswith(".fas") or file.endswith(".fasta")]
+    filenames = []
+    for datafile in datafiles:
+        # Parses datafile name to get only the filename name out. [filename-name].fas
+        filename = datafile.split("/")[-1].split(".fas")[0]
+        filenames.append(filename)
+        print(filename)
+        if datafile.endswith(".fasta"):
+            os.rename(DNAin + datafile, DNAin + f'{filename}.fas')
+            print('^changed .fasta to .fas (file contents not altered')
+    return filenames
+
+filenames = get_filenames()
+print('=========================== filenames ==============================')
+########################### Filename should be informative ##################################
+
+print('============================= genes ================================')
+def get_gene():
+    # Converts file names into a searchable, parsible list
+    datafiles = [file for file in os.listdir(gene_queries) if file.endswith(".fas") or file.endswith(".fasta")]
+    genes = []
+    for datafile in datafiles:
+        # Parses datafile name to get only the gene name out. [gene-name].fas
+        gene = datafile.split("/")[-1].split(".")[0]
+        genes.append(gene)
+        print(gene)
+        if datafile.endswith(".fasta"):
+            os.rename(gene_queries + datafile, gene_queries + f'{gene}.fas')
+            print('^changed .fasta to .fas (file contents not altered')
+    return genes
+
+genes = get_gene()
+print('============================= genes ================================')
+
+# Define final output file(s)
+
+rule all:
+    input:
+        expand("../output/{gene}/{filename}/1.{filename}.{gene}.fas", filename=filenames, gene=genes),
+        expand("../output/{gene}/{filename}/2.{filename}.{gene}.trimmed.fas", filename=filenames, gene=genes),
+        expand("../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas", filename=filenames, gene=genes),
+        expand("../output/{gene}/{filename}/4.{filename}.{gene}.CAP3.trimmed.fas", filename=filenames, gene=genes),
+        expand("../output/{gene}/{filename}/.alignments/a1.{filename}.{gene}.trim.alignments", filename=filenames, gene=genes),
+        expand("../output/{gene}/{filename}/.alignments/a2.{filename}.{gene}.CAP3.trim.alignments", filename=filenames, gene=genes)
+
+# Begin
+
+rule copydatafiles:
+    input:
+        f"{DNAin}{{filename}}.fas"
+    output:
+        "../output/.blastdb/{filename}/{filename}.fas"
+    shell:
+        "cp {input} {output}"
+
+rule makeblastdb_DNAinput: 
+    input:
+        "../output/.blastdb/{filename}/{filename}.fas"
+    output:
+        '../output/.blastdb/{filename}/{filename}.fas.nhr',
+        '../output/.blastdb/{filename}/{filename}.fas.nin',
+        '../output/.blastdb/{filename}/{filename}.fas.nsq'
+    shell:
+        "makeblastdb -in {input} -dbtype nucl"
+
+rule makeblastdb_gene_queries: 
+    input:
+        '../data/gene_queries/active/{gene}.fas'
+    output:
+        '../data/gene_queries/active/{gene}.fas.nhr',
+        '../data/gene_queries/active/{gene}.fas.nin',
+        '../data/gene_queries/active/{gene}.fas.nsq'
+    shell:
+        "makeblastdb -in {input} -dbtype nucl"
+
+############ blastn ref https://www.ncbi.nlm.nih.gov/books/NBK279684/
+rule blastn:
+    input:
+        '../data/gene_queries/active/{gene}.fas',
+        "../output/.blastdb/{filename}/{filename}.fas",
+        '../output/.blastdb/{filename}/{filename}.fas.nhr',
+        '../output/.blastdb/{filename}/{filename}.fas.nin',
+        '../output/.blastdb/{filename}/{filename}.fas.nsq'
+    output:
+        "../output/{gene}/{filename}/.temp/t1.{filename}.{gene}out.tsv"
+
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -outfmt '6 sseqid' -evalue {evalue} > {output}"
+
+rule getsequences:
+    input:
+        "../output/.blastdb/{filename}/{filename}.fas",
+        "../output/{gene}/{filename}/.temp/t1.{filename}.{gene}out.tsv"
+    output:
+        "../output/{gene}/{filename}/.temp/t2.{filename}.{gene}.fas"
+    shell:
+        "python scripts/ListExtract.py {input[0]} {input[1]} {output}"
+
+rule rename_seqs:
+    input:
+        "../output/{gene}/{filename}/.temp/t2.{filename}.{gene}.fas"
+    output:
+        "../output/{gene}/{filename}/.temp/t3.{filename}.{gene}.renamed.fas"
+    params:
+        filename = "{filename}.{gene}"
+    shell:
+        "python3 scripts/FastaRenamer.py {input} {output} {params.filename}"
+
+rule reverse_blast:
+    input:
+        "../output/{gene}/{filename}/.temp/t3.{filename}.{gene}.renamed.fas",
+        "../data/gene_queries/active/{gene}.fas",
+        "../data/gene_queries/active/{gene}.fas.nhr",
+        "../data/gene_queries/active/{gene}.fas.nin",
+        "../data/gene_queries/active/{gene}.fas.nsq"
+    output:
+        "../output/{gene}/{filename}/.temp/t4.{filename}.{gene}revblast.tsv"
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -outfmt '6 qseqid sseqid pident evalue gapopen sstrand' -num_alignments 5 > {output}"
+
+rule MinusHandler:
+    input:
+        "../output/{gene}/{filename}/.temp/t4.{filename}.{gene}revblast.tsv",
+        "../output/{gene}/{filename}/.temp/t3.{filename}.{gene}.renamed.fas"
+    output:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas"
+    shell:
+        "python scripts/MinusHandler.py {input[0]} {input[1]} {output}"
+
+# file 1
+rule sizefilter1:
+    input:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas"
+    output:
+        "../output/{gene}/{filename}/1.{filename}.{gene}.fas"
+    params:
+        N_percent = 100
+    shell:
+        "python scripts/SequenceCleaner.py {input} {min_seq_size} {params.N_percent} {output}"
+            # Run: "python SequenceCleaner.py {input file} {minimum sequence length} {percent Ns allowed} {output file}"
+
+
+rule trim_blast1:
+    input:
+        "../output/{gene}/{filename}/1.{filename}.{gene}.fas",
+        '../data/gene_queries/active/{gene}.fas',
+        '../data/gene_queries/active/{gene}.fas.nhr',
+        '../data/gene_queries/active/{gene}.fas.nin',
+        '../data/gene_queries/active/{gene}.fas.nsq'
+    output:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.trimblast.tsv"
+    params:
+        num_alignments = 6
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -outfmt '6 qseqid qstart qend' -num_alignments {params.num_alignments} > {output}"
+
+rule alignments1:
+    input:
+        "../output/{gene}/{filename}/1.{filename}.{gene}.fas",
+        '../data/gene_queries/active/{gene}.fas',
+        '../data/gene_queries/active/{gene}.fas.nhr',
+        '../data/gene_queries/active/{gene}.fas.nin',
+        '../data/gene_queries/active/{gene}.fas.nsq'
+    output:
+        "../output/{gene}/{filename}/.alignments/a1.{filename}.{gene}.trim.alignments"
+    params:
+        num_alignments = 1
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -num_alignments {params.num_alignments} > {output}"
+            
+# file 2
+rule blast_trimmer1:
+    input: 
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.trimblast.tsv",
+        "../output/{gene}/{filename}/1.{filename}.{gene}.fas",
+    output:
+        "../output/{gene}/{filename}/2.{filename}.{gene}.trimmed.fas"
+    shell:
+        'python scripts/BlastTrimmer.py {input[0]} {input[1]} null {output}'
+
+rule CAP3_assembly:
+    input:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas"
+    output:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas.cap.contigs"
+    params:
+        out = "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas.cap"
+    shell:
+        "cap3 {input} > {params.out} &"
+
+# Note, the is a bug where this script needs to stall until the CAP3 contigs file is full.
+# Otherwise, some downstream sequence files will be empty even though the contig file is full.
+rule cap3_oneliner:
+    input:
+        "../output/{gene}/{filename}/.temp/t5.{filename}.{gene}.renamed.revcomped.fas.cap.contigs"
+    output:
+        "../output/{gene}/{filename}/.temp/t7.{filename}.{gene}.renamed.revcomped.CAP3.fas"
+    params:
+        stalltime = 20
+    shell:
+        "python3 scripts/cap3handler.py {input} {output} {params.stalltime}"
+
+rule sizefilter2:
+    input:
+        "../output/{gene}/{filename}/.temp/t7.{filename}.{gene}.renamed.revcomped.CAP3.fas"
+    output:
+        "../output/{gene}/{filename}/.temp/t8.{filename}.{gene}.renamed.revcomped.CAP3.filtered.fas"
+    params:
+        N_percent = 100
+    shell:
+        "python scripts/SequenceCleaner.py {input} {min_seq_size} {params.N_percent} {output}"
+# Run: "python SequenceCleaner.py {input file} {minimum sequence length} {percent Ns allowed} {output file}"
+
+# file 3  
+rule CAP3_renamer:
+    input:
+        "../output/{gene}/{filename}/.temp/t8.{filename}.{gene}.renamed.revcomped.CAP3.filtered.fas"
+    output:
+        "../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas"
+    params:
+        filename = "{filename}.{gene}"
+    shell:
+        "python3 scripts/FastaRenamer.py {input} {output} {params.filename}"
+
+rule trim_blast2:
+    input:
+        "../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas",
+        '../data/gene_queries/active/{gene}.fas',
+        '../data/gene_queries/active/{gene}.fas.nhr',
+        '../data/gene_queries/active/{gene}.fas.nin',
+        '../data/gene_queries/active/{gene}.fas.nsq'
+    output:
+        "../output/{gene}/{filename}/.temp/t9_{filename}.{gene}.CAP3.trimblast.tsv"
+    params:
+        num_alignments = 6
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -outfmt '6 qseqid qstart qend' -num_alignments {params.num_alignments} > {output}"
+
+rule alignments2:
+    input:
+        "../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas",
+        '../data/gene_queries/active/{gene}.fas',
+        '../data/gene_queries/active/{gene}.fas.nhr',
+        '../data/gene_queries/active/{gene}.fas.nin',
+        '../data/gene_queries/active/{gene}.fas.nsq'
+    output:
+        "../output/{gene}/{filename}/.alignments/a2.{filename}.{gene}.CAP3.trim.alignments"
+    params:
+        num_alignments = 2
+    shell:
+        "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -num_alignments {params.num_alignments} > {output}"
+            
+# file 4
+rule blast_trimmer2:
+    input: 
+        "../output/{gene}/{filename}/.temp/t9_{filename}.{gene}.CAP3.trimblast.tsv",
+        "../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas",
+    output:
+        "../output/{gene}/{filename}/4.{filename}.{gene}.CAP3.trimmed.fas"
+    shell:
+        'python scripts/BlastTrimmer.py {input[0]} {input[1]} null {output}'
