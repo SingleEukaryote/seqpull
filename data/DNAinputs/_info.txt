@@ -1,0 +1,5 @@
+Place fasta files you want to remove and assemble gene sequences from here.
+
+Make sure the filename is simple and reflects the dataset well, as it will be use in the directory naming and sequence naming.
+
+Make sure the file ends with ".fas" for it to be recognized.

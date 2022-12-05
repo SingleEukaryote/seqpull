@@ -271,7 +271,7 @@ rule trim_blast2:
         '../data/gene_queries/active/{gene}.fas.nin',
         '../data/gene_queries/active/{gene}.fas.nsq'
     output:
-        "../output/{gene}/{filename}/.temp/t9_{filename}.{gene}.CAP3.trimblast.tsv"
+        "../output/{gene}/{filename}/.temp/t9.{filename}.{gene}.CAP3.trimblast.tsv"
     params:
         num_alignments = 6
     shell:
@@ -291,12 +291,23 @@ rule alignments2:
     shell:
         "blastn -task blastn -query {input[0]} -db {input[1]} -evalue {evalue} -num_alignments {params.num_alignments} > {output}"
             
-# file 4
+
 rule blast_trimmer2:
     input: 
-        "../output/{gene}/{filename}/.temp/t9_{filename}.{gene}.CAP3.trimblast.tsv",
+        "../output/{gene}/{filename}/.temp/t9.{filename}.{gene}.CAP3.trimblast.tsv",
         "../output/{gene}/{filename}/3.{filename}.{gene}.CAP3.fas",
     output:
-        "../output/{gene}/{filename}/4.{filename}.{gene}.CAP3.trimmed.fas"
+        "../output/{gene}/{filename}/.temp/t10.{filename}.{gene}.CAP3.trimmed.unfiltered.fas"
     shell:
         'python scripts/BlastTrimmer.py {input[0]} {input[1]} null {output}'
+# file 4
+rule sizefilter3:
+    input:
+        "../output/{gene}/{filename}/.temp/t10.{filename}.{gene}.CAP3.trimmed.unfiltered.fas"
+    output:
+        "../output/{gene}/{filename}/4.{filename}.{gene}.CAP3.trimmed.fas"
+    params:
+        N_percent = 100
+    shell:
+        "python scripts/SequenceCleaner.py {input} {min_seq_size} {params.N_percent} {output}"
+# Run: "python SequenceCleaner.py {input file} {minimum sequence length} {percent Ns allowed} {output file}"
