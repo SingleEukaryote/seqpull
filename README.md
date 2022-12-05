@@ -21,6 +21,7 @@ Potential uses:
 ### Python environment
 
 conda install -n base -c conda-forge mamba
+
 mamba create -n seqpull -c conda-forge -c bioconda snakemake biopython cap3 blast
 
 or 
