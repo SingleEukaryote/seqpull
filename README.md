@@ -19,26 +19,14 @@ Potential uses:
 ## Quickstart
 
 ### Python environment
-```
-conda install -n base -c conda-forge mamba
 
-mamba create -n seqpull -c conda-forge -c bioconda snakemake biopython cap3 blast
-```
-**or** 
-
-```
-conda create -n seqpull -c conda-forge -c bioconda snakemake biopython cap3 blast
-
-conda activate seqpull
-```
-
-**or**
 
 *Use the provided yaml file to create the seqpull environment*
 
 ```
-cd code
-conda create -f env/seqpull.yaml
+git clone https://github.com/SingleEukaryote/seqpull
+cd seqpull/code
+conda env create -f env/seqpull.yaml
 ```
 
 ### Running the seqpull pipeline
