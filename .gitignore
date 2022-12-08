@@ -1,0 +1,8 @@
+*.fas
+*.fas*
+seqpull.sh*
+.snakemake/
+output/
+*.log
+
+

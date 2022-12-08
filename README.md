@@ -7,6 +7,7 @@ Functions:
 - CAP3 assembly of pulled sequences (useful for short-read sequences, not long-read).
 - Autoreverse complements sequences based on blast results against the top gene queries.
 - Trims sequence ends based on blast results against the top gene queries.
+    - *note*: the more robust your query sequences (taxonomy and size), the more robust trimming will be.
 - Sequence size filter (default: <500bp sequences are removed).
 - Sequences and output files are automatically named based on input file names and gene file names.
 - Easy-to-parse directories and file names.
