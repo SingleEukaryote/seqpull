@@ -13,7 +13,7 @@ Functions:
 - Easy-to-parse directories and file names.
 - Useful logs.
 
-Potential uses:
+Use examples:
 - Pull marker genes for organism identification (18S, 16S, COI).
 - Find virus-related genes in organism transcriptomes.
 
